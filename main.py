@@ -27,9 +27,7 @@ async def on_shutdown(_: Dispatcher, bot: Bot):
 async def log_requests_middleware(request, handler):
     response = await handler(request)
     if response.status != 200:
-        logger.warning(
-            f"Request error: {request.method} {request.path} -> {response.status}"
-        )
+        logger.warning(f"Request error: {request.method} {request.path} -> {response.status}")
     return response
 
 
@@ -58,7 +56,7 @@ async def main():
         BotCommand(command="income", description="Добавить доход (команда)"),
         BotCommand(command="expense", description="Добавить расход (команда)"),
         BotCommand(command="stats", description="Статистика (week|month)"),
-        BotCommand(command="share", description="Поделиться счётом")
+        BotCommand(command="share", description="Поделиться счётом"),
     ]
     await bot.set_my_commands(commands)
 
