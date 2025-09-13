@@ -52,7 +52,7 @@ CREATE DATABASE family_budget;
 ### Запуск
 
 ```bash
-poetry run python main.py
+poetry run python app/main.py
 ```
 
 ## Использование

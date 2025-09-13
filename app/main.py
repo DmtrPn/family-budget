@@ -1,5 +1,5 @@
 import asyncio
-from logger import logger
+from app.logger import logger
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -8,7 +8,7 @@ from aiohttp import web
 from aiohttp.web import middleware
 from aiohttp.web_middlewares import normalize_path_middleware
 
-from config import settings
+from app.config import settings
 from database import Database
 from handlers import setup_handlers
 
