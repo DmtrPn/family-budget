@@ -1,0 +1,79 @@
+.PHONY: install run test lint format docker-build docker-up docker-down clean
+
+# Установка зависимостей
+install:
+	poetry install
+
+# Запуск бота
+run:
+	poetry run python main.py
+
+# Запуск тестов
+test:
+	poetry run pytest tests/ -v
+
+# Линтинг кода
+lint:
+	poetry run flake8 *.py
+	poetry run black --check *.py
+
+# Форматирование кода
+format:
+	poetry run black *.py
+
+# Сборка Docker образа
+docker-build:
+	docker-compose build
+
+# Запуск с помощью Docker
+docker-up:
+	docker-compose up -d
+
+# Остановка Docker контейнеров
+docker-down:
+	docker-compose down
+
+# Просмотр логов
+docker-logs:
+	docker-compose logs -f bot
+
+# Создание тестовой базы данных
+create-test-db:
+	createdb test_family_budget
+	psql -c "CREATE USER test_user WITH PASSWORD 'test_password';"
+	psql -c "GRANT ALL PRIVILEGES ON DATABASE test_family_budget TO test_user;"
+
+# Удаление тестовой базы данных
+drop-test-db:
+	dropdb test_family_budget
+	psql -c "DROP USER IF EXISTS test_user;"
+
+# Очистка кэша и временных файлов
+clean:
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf .pytest_cache/
+
+# Полная установка для разработки
+dev-setup: install create-test-db
+	@echo "Разработческое окружение настроено!"
+	@echo "Не забудьте создать файл .env с вашими настройками"
+
+# Справка
+help:
+	@echo "Доступные команды:"
+	@echo "  install      - Установка зависимостей"
+	@echo "  run          - Запуск бота"
+	@echo "  test         - Запуск тестов"
+	@echo "  lint         - Проверка кода"
+	@echo "  format       - Форматирование кода"
+	@echo "  docker-build - Сборка Docker образа"
+	@echo "  docker-up    - Запуск с Docker"
+	@echo "  docker-down  - Остановка Docker"
+	@echo "  docker-logs  - Просмотр логов Docker"
+	@echo "  create-test-db - Создание тестовой БД"
+	@echo "  drop-test-db   - Удаление тестовой БД"
+	@echo "  clean        - Очистка временных файлов"
+	@echo "  dev-setup    - Полная настройка для разработки"
+	@echo "  help         - Показать эту справку"

@@ -1,0 +1,44 @@
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.db
+.env
+.venv
+# Virtual Environment
+venv/
+env/
+.venv/
+.env/
+
+public/
+
+# Distribution / Build directories
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Installer logs
+pip-log.txt
+
+# Unit test / Coverage results
+htmlcov/
+.tox/
+.coverage
+.cache
+.pytest_cache/
+
+# IDE files
+*.idea/
+*.vscode/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Other
+*.log
+*.bak
