@@ -1,11 +1,37 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 
 from database import Database
 
 router = Router()
+
+# Константы кнопок
+BTN_ADD_EXPENSE = "➖ Добавить списание"
+BTN_STATS = "📊 Статистика"
+BTN_ACCOUNTS = "💳 Счета"
+BTN_CANCEL = "Отмена"
+
+CATEGORIES = ["еда", "транспорт", "жильё", "развлечения", "другое"]
+
+class ExpenseFSM(StatesGroup):
+    ChoosingAccount = State()
+    ChoosingCategory = State()
+    EnteringAmount = State()
+    Confirming = State()
+
+
+def _main_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_ADD_EXPENSE)],
+            [KeyboardButton(text=BTN_STATS)],
+            [KeyboardButton(text=BTN_ACCOUNTS)],
+        ],
+        resize_keyboard=True
+    )
 
 
 def setup_handlers(db: Database):
@@ -14,24 +40,141 @@ def setup_handlers(db: Database):
     @router.message(Command("start"))
     async def cmd_start(message: Message):
         """Команда /start"""
-        user_id = await db.create_or_get_user(
-            message.from_user.id, 
-            message.from_user.username
-        )
+        await db.create_or_get_user(message.from_user.id, message.from_user.username)
         
         await message.answer(
             "🏦 Добро пожаловать в Семейный бюджет!\n\n"
-            "Доступные команды:\n"
-            "💳 /new_account <название> - Создать счет\n"
-            "📋 /accounts - Мои счета\n"
-            "💰 /income <счет> <сумма> <комментарий> - Пополнение\n"
-            "💸 /expense <счет> <сумма> <категория> <комментарий> - Расход\n"
-            "📊 /stats week - Статистика за неделю\n"
-            "📊 /stats month - Статистика за месяц\n"
-            "🤝 /share <счет> <user_id> - Поделиться счетом\n\n"
-            "Категории расходов: еда, транспорт, жильё, развлечения, другое"
+            "Выберите действие с помощью кнопок ниже.",
+            reply_markup=_main_menu()
         )
 
+    @router.message(F.text == BTN_ADD_EXPENSE)
+    async def start_expense_flow(message: Message, state: FSMContext):
+        """Запуск FSM добавления расхода"""
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        accounts = await db.get_user_accounts(user_id)
+
+        # Показать кнопку Отмена на время сценария
+        cancel_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BTN_CANCEL)]], resize_keyboard=True)
+        await message.answer("Выберите счёт для списания:", reply_markup=cancel_kb)
+
+        if not accounts:
+            await message.answer("📭 У вас нет счетов. Создайте счёт командой: /new_account <название>")
+            await state.clear()
+            await message.answer("Возвращаю главное меню", reply_markup=_main_menu())
+            return
+
+        if len(accounts) == 1:
+            # Автовыбор
+            await state.update_data(account_id=accounts[0]['id'], account_name=accounts[0]['name'])
+            # Переходим к выбору категории
+            builder = [[InlineKeyboardButton(text=cat.capitalize(), callback_data=f"cat:{cat}") for cat in CATEGORIES[:3]],
+                       [InlineKeyboardButton(text=cat.capitalize(), callback_data=f"cat:{cat}") for cat in CATEGORIES[3:]],
+                       ]
+            await message.answer("Выберите категорию:", reply_markup=InlineKeyboardMarkup(inline_keyboard=builder))
+            await state.set_state(ExpenseFSM.ChoosingCategory)
+        else:
+            # Показать список счетов инлайн-кнопками
+            rows = []
+            row = []
+            for i, acc in enumerate(accounts, 1):
+                row.append(InlineKeyboardButton(text=f"{acc['name']} ({acc['balance']:.0f} ₽)", callback_data=f"acc:{acc['id']}:{acc['name']}"))
+                if i % 2 == 0:
+                    rows.append(row)
+                    row = []
+            if row:
+                rows.append(row)
+            await message.answer("Выберите счёт:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+            await state.set_state(ExpenseFSM.ChoosingAccount)
+
+    @router.message(F.text == BTN_STATS)
+    async def stats_menu(message: Message):
+        """Показать выбор периода статистики"""
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Неделя", callback_data="period:week"),
+             InlineKeyboardButton(text="Месяц", callback_data="period:month")]
+        ])
+        await message.answer("Выберите период статистики:", reply_markup=kb)
+
+    @router.message(F.text == BTN_ACCOUNTS)
+    async def accounts_menu(message: Message):
+        """Список счетов по кнопке"""
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        accounts = await db.get_user_accounts(user_id)
+        if not accounts:
+            await message.answer("📭 У вас пока нет счетов. Создайте первый: /new_account <название>", reply_markup=_main_menu())
+            return
+        text = "💳 Ваши счета:\n\n"
+        for account in accounts:
+            role_emoji = "👑" if account['role'] == 'owner' else "🤝"
+            owner_info = "" if account['role'] == 'owner' else f" (владелец: @{account['owner_username']})"
+            text += f"{role_emoji} {account['name']}: {account['balance']:.2f} ₽{owner_info}\n"
+        await message.answer(text, reply_markup=_main_menu())
+
+    @router.message(F.text == BTN_CANCEL)
+    async def cancel_anytime(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("❌ Действие отменено.", reply_markup=_main_menu())
+
+    @router.callback_query(F.data.startswith("acc:"))
+    async def choose_account(cb: CallbackQuery, state: FSMContext):
+        if await state.get_state() != ExpenseFSM.ChoosingAccount:
+            await cb.answer()
+            return
+        _, acc_id, acc_name = cb.data.split(":", 2)
+        await state.update_data(account_id=int(acc_id), account_name=acc_name)
+        # Кнопки категорий
+        rows = [[InlineKeyboardButton(text=cat.capitalize(), callback_data=f"cat:{cat}") for cat in CATEGORIES[:3]],
+                [InlineKeyboardButton(text=cat.capitalize(), callback_data=f"cat:{cat}") for cat in CATEGORIES[3:]],]
+        await cb.message.answer("Выберите категорию:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await state.set_state(ExpenseFSM.ChoosingCategory)
+        await cb.answer()
+
+    @router.callback_query(F.data.startswith("cat:"))
+    async def choose_category(cb: CallbackQuery, state: FSMContext):
+        if await state.get_state() != ExpenseFSM.ChoosingCategory:
+            await cb.answer()
+            return
+        _, cat = cb.data.split(":", 1)
+        await state.update_data(category=cat)
+        await cb.message.answer("Введите сумму, при желании добавьте комментарий через пробел.")
+        await state.set_state(ExpenseFSM.EnteringAmount)
+        await cb.answer()
+
+    @router.message(ExpenseFSM.EnteringAmount)
+    async def enter_amount(message: Message, state: FSMContext):
+        text = message.text.strip()
+        # ожидается: "500" или "500 ужин в кафе"
+        first, *rest = text.split()
+        try:
+            amount = float(first.replace(',', '.'))
+            if amount <= 0:
+                raise ValueError()
+        except Exception:
+            await message.answer("Сумма должна быть числом. Попробуйте ещё раз.")
+            return
+        comment = " ".join(rest)
+        data = await state.get_data()
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        # Проверим категорию id
+        category_id = await db.get_category_by_name(data.get('category'))
+        if not category_id:
+            await message.answer("Ошибка: категория не найдена. Начните сначала.", reply_markup=_main_menu())
+            await state.clear()
+            return
+        account_id = data.get('account_id')
+        account_name = data.get('account_name')
+        await db.add_transaction(account_id, user_id, 'expense', amount, category_id, comment)
+        new_balance = await db.get_account_balance(account_id)
+        category_name = data.get('category')
+        await message.answer(
+            f"✅ Списание: {amount:.0f} ({category_name}, счёт: {account_name}). Комментарий: {comment if comment else '—'}",
+            reply_markup=_main_menu()
+        )
+        await message.answer(f"🏦 Баланс счёта '{account_name}': {new_balance:.2f} ₽")
+        await state.clear()
+
+    # Оставляем существующие командные обработчики ниже
     @router.message(Command("new_account"))
     async def cmd_new_account(message: Message):
         """Создание нового счета"""
@@ -180,7 +323,7 @@ def setup_handlers(db: Database):
 
     @router.message(Command("stats"))
     async def cmd_stats(message: Message):
-        """Статистика за период"""
+        """Статистика за период (команда)"""
         args = message.text.split()
         if len(args) < 2 or args[1] not in ['week', 'month']:
             await message.answer(
@@ -188,30 +331,33 @@ def setup_handlers(db: Database):
                 "Доступные варианты: /stats week или /stats month"
             )
             return
-        
         period = args[1]
+        await _send_stats(message, period)
+
+    @router.callback_query(F.data.startswith("period:"))
+    async def stats_period(cb: CallbackQuery):
+        period = cb.data.split(":", 1)[1]
+        await _send_stats(cb.message, period)
+        await cb.answer()
+
+    async def _send_stats(message: Message, period: str):
+        if period not in ("week", "month"):
+            await message.answer("Неверный период.")
+            return
         days = 7 if period == 'week' else 30
         period_name = "неделю" if period == 'week' else "месяц"
-        
-        user_id = await db.create_or_get_user(
-            message.from_user.id,
-            message.from_user.username
-        )
-        
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
         stats = await db.get_stats(user_id, days)
-        
         text = f"📊 Статистика за {period_name}:\n\n"
         text += f"💰 Доходы: {stats['total_income']:.2f} ₽\n"
         text += f"💸 Расходы: {stats['total_expense']:.2f} ₽\n"
         text += f"💵 Разница: {stats['total_income'] - stats['total_expense']:.2f} ₽\n\n"
-        
         if stats['categories']:
             text += "📂 Расходы по категориям:\n"
             for cat in stats['categories']:
                 text += f"• {cat['name']}: {cat['amount']:.2f} ₽ ({cat['percentage']:.1f}%)\n"
         else:
             text += "📭 Нет расходов за данный период"
-        
         await message.answer(text)
 
     @router.message(Command("share"))
