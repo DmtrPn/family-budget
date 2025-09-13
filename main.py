@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
@@ -30,6 +31,18 @@ async def main():
     # Настройка обработчиков
     handlers_router = setup_handlers(db)
     dp.include_router(handlers_router)
+
+    # Устанавливаем список команд бота
+    commands = [
+        BotCommand(command="start", description="Начать работу"),
+        BotCommand(command="new_account", description="Создать счёт"),
+        BotCommand(command="accounts", description="Мои счета"),
+        BotCommand(command="income", description="Добавить доход (команда)"),
+        BotCommand(command="expense", description="Добавить расход (команда)"),
+        BotCommand(command="stats", description="Статистика (week|month)"),
+        BotCommand(command="share", description="Поделиться счётом")
+    ]
+    await bot.set_my_commands(commands)
     
     try:
         logger.info("Запуск бота...")

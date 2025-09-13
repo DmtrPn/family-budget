@@ -6,9 +6,22 @@ from aiogram.fsm.state import StatesGroup, State
 
 from database import Database
 
+# Helpers for money formatting
+
+def _fmt_amount(amount: float, decimals: int = 2) -> str:
+    try:
+        return format(amount, f",.{decimals}f").replace(",", " ")
+    except Exception:
+        # Fallback to simple format
+        return f"{amount:.{decimals}f}"
+
+def _fmt_money(amount: float, decimals: int = 2) -> str:
+    return f"{_fmt_amount(amount, decimals)} ₽"
+
 router = Router()
 
 # Константы кнопок
+BTN_ADD_INCOME = "➕ Пополнить баланс"
 BTN_ADD_EXPENSE = "➖ Добавить списание"
 BTN_STATS = "📊 Статистика"
 BTN_ACCOUNTS = "💳 Счета"
@@ -22,10 +35,15 @@ class ExpenseFSM(StatesGroup):
     EnteringAmount = State()
     Confirming = State()
 
+class IncomeFSM(StatesGroup):
+    ChoosingAccount = State()
+    EnteringAmount = State()
+
 
 def _main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text=BTN_ADD_INCOME)],
             [KeyboardButton(text=BTN_ADD_EXPENSE)],
             [KeyboardButton(text=BTN_STATS)],
             [KeyboardButton(text=BTN_ACCOUNTS)],
@@ -78,7 +96,7 @@ def setup_handlers(db: Database):
             rows = []
             row = []
             for i, acc in enumerate(accounts, 1):
-                row.append(InlineKeyboardButton(text=f"{acc['name']} ({acc['balance']:.0f} ₽)", callback_data=f"acc:{acc['id']}:{acc['name']}"))
+                row.append(InlineKeyboardButton(text=f"{acc['name']} ({_fmt_money(acc['balance'], 0)})", callback_data=f"acc:{acc['id']}:{acc['name']}"))
                 if i % 2 == 0:
                     rows.append(row)
                     row = []
@@ -96,6 +114,74 @@ def setup_handlers(db: Database):
         ])
         await message.answer("Выберите период статистики:", reply_markup=kb)
 
+    @router.message(F.text == BTN_ADD_INCOME)
+    async def start_income_flow(message: Message, state: FSMContext):
+        """Запуск пополнения (доход) через кнопки"""
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        accounts = await db.get_user_accounts(user_id)
+
+        cancel_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BTN_CANCEL)]], resize_keyboard=True)
+        await message.answer("Выберите счёт для пополнения:", reply_markup=cancel_kb)
+
+        if not accounts:
+            await message.answer("📭 У вас нет счетов. Создайте счёт командой: /new_account <название>")
+            await state.clear()
+            await message.answer("Возвращаю главное меню", reply_markup=_main_menu())
+            return
+
+        if len(accounts) == 1:
+            await state.update_data(account_id=accounts[0]['id'], account_name=accounts[0]['name'])
+            await message.answer("Введите сумму, при желании добавьте комментарий через пробел.")
+            await state.set_state(IncomeFSM.EnteringAmount)
+        else:
+            rows = []
+            row = []
+            for i, acc in enumerate(accounts, 1):
+                row.append(InlineKeyboardButton(text=f"{acc['name']} ({_fmt_money(acc['balance'], 0)})", callback_data=f"incacc:{acc['id']}:{acc['name']}"))
+                if i % 2 == 0:
+                    rows.append(row)
+                    row = []
+            if row:
+                rows.append(row)
+            await message.answer("Выберите счёт:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+            await state.set_state(IncomeFSM.ChoosingAccount)
+
+    @router.callback_query(F.data.startswith("incacc:"))
+    async def income_choose_account(cb: CallbackQuery, state: FSMContext):
+        if await state.get_state() != IncomeFSM.ChoosingAccount:
+            await cb.answer()
+            return
+        _, acc_id, acc_name = cb.data.split(":", 2)
+        await state.update_data(account_id=int(acc_id), account_name=acc_name)
+        await cb.message.answer("Введите сумму, при желании добавьте комментарий через пробел.")
+        await state.set_state(IncomeFSM.EnteringAmount)
+        await cb.answer()
+
+    @router.message(IncomeFSM.EnteringAmount)
+    async def income_enter_amount(message: Message, state: FSMContext):
+        text = message.text.strip()
+        first, *rest = text.split()
+        try:
+            amount = float(first.replace(',', '.'))
+            if amount <= 0:
+                raise ValueError()
+        except Exception:
+            await message.answer("Сумма должна быть числом. Попробуйте ещё раз.")
+            return
+        comment = " ".join(rest)
+        data = await state.get_data()
+        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        account_id = data.get('account_id')
+        account_name = data.get('account_name')
+        await db.add_transaction(account_id, user_id, 'income', amount, None, comment)
+        new_balance = await db.get_account_balance(account_id)
+        await message.answer(
+            f"✅ Пополнение: +{_fmt_amount(amount, 0)} (счёт: {account_name}). Комментарий: {comment if comment else '—'}",
+            reply_markup=_main_menu()
+        )
+        await message.answer(f"🏦 Баланс счёта '{account_name}': {_fmt_money(new_balance)}")
+        await state.clear()
+
     @router.message(F.text == BTN_ACCOUNTS)
     async def accounts_menu(message: Message):
         """Список счетов по кнопке"""
@@ -108,7 +194,7 @@ def setup_handlers(db: Database):
         for account in accounts:
             role_emoji = "👑" if account['role'] == 'owner' else "🤝"
             owner_info = "" if account['role'] == 'owner' else f" (владелец: @{account['owner_username']})"
-            text += f"{role_emoji} {account['name']}: {account['balance']:.2f} ₽{owner_info}\n"
+            text += f"{role_emoji} {account['name']}: {_fmt_money(account['balance'])}{owner_info}\n"
         await message.answer(text, reply_markup=_main_menu())
 
     @router.message(F.text == BTN_CANCEL)
@@ -168,10 +254,10 @@ def setup_handlers(db: Database):
         new_balance = await db.get_account_balance(account_id)
         category_name = data.get('category')
         await message.answer(
-            f"✅ Списание: {amount:.0f} ({category_name}, счёт: {account_name}). Комментарий: {comment if comment else '—'}",
+            f"✅ Списание: {_fmt_amount(amount, 0)} ({category_name}, счёт: {account_name}). Комментарий: {comment if comment else '—'}",
             reply_markup=_main_menu()
         )
-        await message.answer(f"🏦 Баланс счёта '{account_name}': {new_balance:.2f} ₽")
+        await message.answer(f"🏦 Баланс счёта '{account_name}': {_fmt_money(new_balance)}")
         await state.clear()
 
     # Оставляем существующие командные обработчики ниже
@@ -212,7 +298,7 @@ def setup_handlers(db: Database):
         for account in accounts:
             role_emoji = "👑" if account['role'] == 'owner' else "🤝"
             owner_info = "" if account['role'] == 'owner' else f" (владелец: @{account['owner_username']})"
-            text += f"{role_emoji} {account['name']}: {account['balance']:.2f} ₽{owner_info}\n"
+            text += f"{role_emoji} {account['name']}: {_fmt_money(account['balance'])}{owner_info}\n"
         
         await message.answer(text)
 
@@ -257,9 +343,9 @@ def setup_handlers(db: Database):
         await message.answer(
             f"✅ Доход добавлен!\n"
             f"💳 Счет: {account['name']}\n"
-            f"💰 Сумма: +{amount:.2f} ₽\n"
+            f"💰 Сумма: +{_fmt_money(amount)}\n"
             f"💬 Комментарий: {comment}\n"
-            f"🏦 Баланс: {new_balance:.2f} ₽"
+            f"🏦 Баланс: {_fmt_money(new_balance)}"
         )
 
     @router.message(Command("expense"))
@@ -315,10 +401,10 @@ def setup_handlers(db: Database):
         await message.answer(
             f"✅ Расход добавлен!\n"
             f"💳 Счет: {account['name']}\n"
-            f"💸 Сумма: -{amount:.2f} ₽\n"
+            f"💸 Сумма: -{_fmt_money(amount)}\n"
             f"📂 Категория: {category_name}\n"
             f"💬 Комментарий: {comment}\n"
-            f"🏦 Баланс: {new_balance:.2f} ₽"
+            f"🏦 Баланс: {_fmt_money(new_balance)}"
         )
 
     @router.message(Command("stats"))
@@ -332,30 +418,31 @@ def setup_handlers(db: Database):
             )
             return
         period = args[1]
-        await _send_stats(message, period)
+        await _send_stats(message, period, message.from_user)
 
     @router.callback_query(F.data.startswith("period:"))
     async def stats_period(cb: CallbackQuery):
         period = cb.data.split(":", 1)[1]
-        await _send_stats(cb.message, period)
+        await _send_stats(cb.message, period, cb.from_user)
         await cb.answer()
 
-    async def _send_stats(message: Message, period: str):
+    async def _send_stats(message: Message, period: str, user):
         if period not in ("week", "month"):
             await message.answer("Неверный период.")
             return
         days = 7 if period == 'week' else 30
         period_name = "неделю" if period == 'week' else "месяц"
-        user_id = await db.create_or_get_user(message.from_user.id, message.from_user.username)
+        # Используем пользователя-инициатора (сообщение или колбэк)
+        user_id = await db.create_or_get_user(user.id, user.username)
         stats = await db.get_stats(user_id, days)
         text = f"📊 Статистика за {period_name}:\n\n"
-        text += f"💰 Доходы: {stats['total_income']:.2f} ₽\n"
-        text += f"💸 Расходы: {stats['total_expense']:.2f} ₽\n"
-        text += f"💵 Разница: {stats['total_income'] - stats['total_expense']:.2f} ₽\n\n"
+        text += f"💰 Доходы: {_fmt_money(stats['total_income'])}\n"
+        text += f"💸 Расходы: {_fmt_money(stats['total_expense'])}\n"
+        text += f"💵 Разница: {_fmt_money(stats['total_income'] - stats['total_expense'])}\n\n"
         if stats['categories']:
             text += "📂 Расходы по категориям:\n"
             for cat in stats['categories']:
-                text += f"• {cat['name']}: {cat['amount']:.2f} ₽ ({cat['percentage']:.1f}%)\n"
+                text += f"• {cat['name']}: {_fmt_money(cat['amount'])} ({cat['percentage']:.1f}%)\n"
         else:
             text += "📭 Нет расходов за данный период"
         await message.answer(text)
