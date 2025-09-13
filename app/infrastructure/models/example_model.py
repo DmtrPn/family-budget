@@ -1,28 +1,28 @@
-import uuid
+# import uuid
 from datetime import datetime
 from . import BaseModel
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, BigInteger, Text, Numeric, ForeignKey, DateTime
 from sqlalchemy.sql import func
 
-from sqlalchemy.dialects.postgresql import UUID
+# from sqlalchemy.dialects.postgresql import UUID
 
 # Example domain-specific import kept as-is for compatibility with example storage/tests
-from app.constants import ExampleStatus  # type: ignore
+# from app.constants import ExampleStatus  # type: ignore
 
-from app.infrastructure.utils.safe_enum import SafeEnumType
+# from app.infrastructure.utils.safe_enum import SafeEnumType
 
-
-class ExampleModel(BaseModel):
-    __tablename__ = "example"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String, nullable=True)
-    status: Mapped[ExampleStatus] = mapped_column(
-        SafeEnumType(ExampleStatus),
-        nullable=False,
-        default=ExampleStatus.active.value,
-    )
+#
+# class ExampleModel(BaseModel):
+#     __tablename__ = "example"
+#
+#     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+#     name: Mapped[str] = mapped_column(String, nullable=True)
+#     status: Mapped[ExampleStatus] = mapped_column(
+#         SafeEnumType(ExampleStatus),
+#         nullable=False,
+#         default=ExampleStatus.active.value,
+#     )
 
 
 # Below are ORM models for entities used by BudgetStorage

@@ -9,7 +9,7 @@ class BaseModel(DeclarativeModel):  # type: ignore[misc,valid-type]
 
 
 from .example_model import (  # noqa
-    ExampleModel,
+    # ExampleModel,
     UserModel,
     CategoryModel,
     AccountModel,

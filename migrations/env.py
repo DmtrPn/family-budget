@@ -20,7 +20,7 @@ def render_item(type_, obj, autogen_context):
 
 config = context.config
 
-database_url = settings.DATABASE_URI
+database_url = settings.database_url
 # Convert async URL to sync URL for migrations if needed
 if database_url.startswith("postgresql+asyncpg://"):
     database_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
