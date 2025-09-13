@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from logger import logger
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -16,7 +16,7 @@ from handlers import setup_handlers
 async def on_startup(_: Dispatcher, bot: Bot):
     if settings.webhook_url:
         resp = await bot.set_webhook(settings.webhook_url)
-        logging.getLogger(__name__).info(f"Webhook set response: {resp}")
+        logger.info(f"Webhook set response: {resp}")
 
 
 async def on_shutdown(_: Dispatcher, bot: Bot):
@@ -27,7 +27,7 @@ async def on_shutdown(_: Dispatcher, bot: Bot):
 async def log_requests_middleware(request, handler):
     response = await handler(request)
     if response.status != 200:
-        logging.getLogger(__name__).warning(
+        logger.warning(
             f"Request error: {request.method} {request.path} -> {response.status}"
         )
     return response
@@ -35,12 +35,6 @@ async def log_requests_middleware(request, handler):
 
 async def main():
     """Основная функция запуска бота (поддержка Polling/Webhook)"""
-    # Настройка логирования
-    logging.basicConfig(
-        level=logging.INFO if not settings.debug else logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger(__name__)
 
     # Создание бота и диспетчера
     bot = Bot(token=settings.bot_token)

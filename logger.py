@@ -1,8 +1,9 @@
 import logging
+from config import settings
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO if not settings.debug else logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
