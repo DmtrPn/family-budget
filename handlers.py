@@ -11,7 +11,7 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from database import Database
+from app.infrastructure.database import Database
 
 # Helpers for money formatting
 

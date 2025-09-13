@@ -1,5 +1,5 @@
 import pytest
-from database import Database
+from app.infrastructure.database import Database
 
 # Используем тестовую базу данных
 TEST_DB_URL = "postgresql://test_user:test_password@localhost/test_family_budget"

@@ -8,4 +8,11 @@ class BaseModel(DeclarativeModel):  # type: ignore[misc,valid-type]
     __abstract__ = True
 
 
-from .example_model import ExampleModel  # noqa
+from .example_model import (  # noqa
+    ExampleModel,
+    UserModel,
+    CategoryModel,
+    AccountModel,
+    AccountShareModel,
+    TransactionModel,
+)

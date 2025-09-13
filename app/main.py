@@ -9,7 +9,7 @@ from aiohttp.web import middleware
 from aiohttp.web_middlewares import normalize_path_middleware
 
 from app.config import settings
-from database import Database
+from app.infrastructure.database import Database
 from handlers import setup_handlers
 
 
